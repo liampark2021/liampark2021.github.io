@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Roblox Universe Form</title>
+    <title>Roblox Universe Patcher</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; }
         .config-group { margin-bottom: 20px; padding: 15px; border: 2px solid #007bff; border-radius: 5px; background-color: #f0f8ff; }
@@ -15,12 +15,13 @@
         .controls button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; }
         #setAllBtn { background-color: #28a745; color: white; }
         #generateBtn { background-color: #ffc107; color: black; }
+        #executeBtn { background-color: #dc3545; color: white; } /* Highlight the execution button */
         #payloadOutput { background-color: #e9ecef; padding: 15px; border-radius: 4px; white-space: pre-wrap; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-    <h1>Roblox Universe Settings</h1>
+    <h1>Roblox Universe Settings Patcher</h1>
     
     <div class="config-group">
         <h2>Configuration</h2>
@@ -34,22 +35,25 @@
         </div>
     </div>
 
-    <p>Inputs generated from the API schema. Note: **Immutable** fields cannot be changed.</p>
+    <p>Inputs generated from the API schema. **Only non-empty fields will be included in the PATCH request**.</p>
     
     <div class="controls">
         <button type="button" id="setAllBtn" onclick="setAllValues()">Set All Editable Values</button>
-        <button type="button" id="generateBtn" onclick="generatePayload()">Generate & Print Payload</button>
+        <button type="button" id="generateBtn" onclick="generatePayload()">Generate Payload JSON</button>
+        <button type="button" id="executeBtn" onclick="performPatchRequest()">EXECUTE PATCH REQUEST</button>
     </div>
 
     <form id="universeSettingsForm">
         </form>
     
-    <h2>Generated API Payload</h2>
+    <h2>API Output / Log</h2>
     <div id="payloadOutput">
-        Ready to generate payload.
+        Ready to generate and execute payload.
     </div>
 
     <script>
+        const BASE_URL = "https://apis.roblox.com/universes/v1"; 
+        
         const FULL_UNIVERSE_SCHEMA = {
             "path": "universes/123",
             "group": "string",
@@ -79,7 +83,146 @@
             return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
         }
 
-        // --- Form Generation (Same as before) ---
+        // --- Core Logic: Building the Payload ---
+
+        /**
+         * Converts input string to its correct data type (boolean or number)
+         */
+        function parseInputValue(value, schemaValue) {
+            if (typeof schemaValue === 'boolean') {
+                return value.toLowerCase() === 'true';
+            }
+            if (typeof schemaValue === 'number' && !isNaN(Number(value))) {
+                return Number(value);
+            }
+            return value;
+        }
+
+        /**
+         * Gathers data from the form and prepares the request payload, returning 
+         * the request details object.
+         */
+        function gatherRequestDetails() {
+            const universeId = document.getElementById('universeIdInput').value.trim();
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            
+            if (!universeId || !apiKey) {
+                return { error: "Please enter both a Universe ID and an API Key." };
+            }
+
+            const requestBody = {};
+            const updateMaskKeys = new Set();
+            const inputElements = document.querySelectorAll('.api-field');
+
+            inputElements.forEach(input => {
+                const fullKey = input.id;
+                const value = input.value.trim();
+
+                // Only include fields that have a non-empty value
+                if (value !== '') {
+                    const parts = fullKey.split('-');
+                    const topLevelKey = parts[0];
+                    updateMaskKeys.add(topLevelKey);
+
+                    if (parts.length > 1) {
+                        if (!requestBody[topLevelKey]) {
+                            requestBody[topLevelKey] = {};
+                        }
+                        const nestedKey = parts[1];
+                        requestBody[topLevelKey][nestedKey] = parseInputValue(value, FULL_UNIVERSE_SCHEMA[topLevelKey][nestedKey]);
+                    } else {
+                        requestBody[topLevelKey] = parseInputValue(value, FULL_UNIVERSE_SCHEMA[topLevelKey]);
+                    }
+                }
+            });
+            
+            if (Object.keys(requestBody).length === 0) {
+                 return { error: "No fields entered. Please fill in at least one editable field." };
+            }
+
+            const updateMask = Array.from(updateMaskKeys).join(',');
+            const finalUrl = `${BASE_URL}/${universeId}?updateMask=${updateMask}`;
+
+            return {
+                url: finalUrl,
+                apiKey: apiKey,
+                body: requestBody,
+                updateMask: updateMask
+            };
+        }
+
+
+        // --- New Function: Executes the PATCH Request ---
+        
+        async function performPatchRequest() {
+            const details = gatherRequestDetails();
+
+            if (details.error) {
+                payloadOutput.innerHTML = `<span style="color: red; font-weight: bold;">Error: ${details.error}</span>`;
+                return;
+            }
+
+            payloadOutput.innerHTML = `<span style="color: orange;">Processing request to update Universe ID ${document.getElementById('universeIdInput').value}...</span>`;
+
+            try {
+                const response = await fetch(details.url, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${details.apiKey}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(details.body)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    let output = `<span style="color: green; font-weight: bold;">✅ Success: Universe Updated!</span>\n`;
+                    output += `STATUS: ${response.status}\n`;
+                    output += `\n--- Returned Universe Configuration ---\n`;
+                    output += JSON.stringify(data, null, 2);
+                    payloadOutput.textContent = output;
+                } else {
+                    const errorData = await response.json();
+                    let output = `<span style="color: red; font-weight: bold;">❌ API Error: Failed to Update Universe</span>\n`;
+                    output += `STATUS: ${response.status}\n`;
+                    output += `URL: ${details.url}\n`;
+                    output += `\n--- Error Details ---\n`;
+                    output += JSON.stringify(errorData, null, 2);
+                    payloadOutput.textContent = output;
+                }
+
+            } catch (error) {
+                payloadOutput.innerHTML = `<span style="color: red; font-weight: bold;">❌ Network Error: ${error.message}</span>`;
+            }
+        }
+        
+        // --- Generate Payload (Now calls gatherRequestDetails) ---
+        function generatePayload() {
+            const details = gatherRequestDetails();
+            
+            if (details.error) {
+                payloadOutput.innerHTML = `<span style="color: red; font-weight: bold;">Error: ${details.error}</span>`;
+                return;
+            }
+
+            let output = `--- API Request Details ---\n`;
+            output += `METHOD: PATCH\n`;
+            output += `URL: ${details.url}\n`;
+            output += `\n`;
+            output += `HEADERS:\n`;
+            output += `  Authorization: Bearer ${details.apiKey.substring(0, 10)}...\n`;
+            output += `  Content-Type: application/json\n`;
+            output += `\n`;
+            output += `BODY (JSON):\n`;
+            output += JSON.stringify(details.body, null, 2);
+
+            payloadOutput.textContent = output;
+        }
+
+
+        // --- Previous Functions (Set All Values and Generation) ---
+        
         function generateForm(schema, parentKey = '') {
             for (const key in schema) {
                 if (!schema.hasOwnProperty(key)) continue;
@@ -113,7 +256,6 @@
                         } else {
                             input.placeholder = 'String or URI';
                         }
-                        // Add a class for easy selection in the payload function
                         input.classList.add('api-field');
                     }
 
@@ -124,7 +266,6 @@
             }
         }
         
-        // --- Set All Values (Same as before) ---
         function setAllValues() {
             const inputs = form.querySelectorAll('input:not([disabled])');
             inputs.forEach(input => {
@@ -141,78 +282,7 @@
                     input.value = 'TEST_VALUE';
                 }
             });
-            payloadOutput.textContent = "All editable fields have been set with generic test values. Click 'Generate & Print Payload' to review the output.";
-        }
-
-
-        // --- NEW: Generate and Print Payload ---
-        function generatePayload() {
-            const universeId = document.getElementById('universeIdInput').value.trim();
-            const apiKey = document.getElementById('apiKeyInput').value.trim();
-            
-            if (!universeId || !apiKey) {
-                payloadOutput.textContent = "Error: Please enter both a Universe ID and an API Key.";
-                return;
-            }
-
-            const requestBody = {};
-            const updateMaskKeys = new Set();
-            const inputElements = document.querySelectorAll('.api-field');
-
-            // 1. Build the requestBody object
-            inputElements.forEach(input => {
-                const fullKey = input.id;
-                const value = input.value.trim();
-
-                // Only include fields that have a value
-                if (value !== '') {
-                    const parts = fullKey.split('-');
-                    const topLevelKey = parts[0];
-                    updateMaskKeys.add(topLevelKey);
-
-                    // Handle nested structure (e.g., facebookSocialLink-uri)
-                    if (parts.length > 1) {
-                        if (!requestBody[topLevelKey]) {
-                            requestBody[topLevelKey] = {};
-                        }
-                        const nestedKey = parts[1];
-                        requestBody[topLevelKey][nestedKey] = parseInputValue(value, FULL_UNIVERSE_SCHEMA[topLevelKey][nestedKey]);
-                    } else {
-                        // Handle simple top-level keys
-                        requestBody[topLevelKey] = parseInputValue(value, FULL_UNIVERSE_SCHEMA[topLevelKey]);
-                    }
-                }
-            });
-
-            // 2. Format the final output
-            const updateMask = Array.from(updateMaskKeys).join(',');
-            const finalUrl = `https://apis.roblox.com/universes/v1/${universeId}?updateMask=${updateMask}`;
-
-            let output = `--- API Request Details ---\n`;
-            output += `METHOD: PATCH\n`;
-            output += `URL: ${finalUrl}\n`;
-            output += `\n`;
-            output += `HEADERS:\n`;
-            output += `  Authorization: Bearer ${apiKey.substring(0, 10)}...\n`; // Truncate key for safety
-            output += `  Content-Type: application/json\n`;
-            output += `\n`;
-            output += `BODY (JSON):\n`;
-            output += JSON.stringify(requestBody, null, 2);
-
-            payloadOutput.textContent = output;
-        }
-
-        /**
-         * Converts input string to its correct data type (boolean or number)
-         */
-        function parseInputValue(value, schemaValue) {
-            if (typeof schemaValue === 'boolean') {
-                return value.toLowerCase() === 'true';
-            }
-            if (typeof schemaValue === 'number' && !isNaN(Number(value))) {
-                return Number(value);
-            }
-            return value;
+            payloadOutput.textContent = "All editable fields have been set with generic test values. Click 'EXECUTE PATCH REQUEST' to apply the changes.";
         }
 
         // Initial setup
