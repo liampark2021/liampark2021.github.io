@@ -1,12 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="0; url=https://pornhub.com">
+    <title>Dynamic Roblox Universe Form</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .config-group { margin-bottom: 20px; padding: 15px; border: 2px solid #007bff; border-radius: 5px; background-color: #f0f8ff; }
+        .form-group { margin-bottom: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+        .form-group input[type="text"] { width: 90%; padding: 8px; border: 1px solid #aaa; border-radius: 3px; }
+        .immutable { background-color: #f7e0e0; color: #721c24; border-color: #f5c6cb; }
+        .controls { margin-top: 10px; margin-bottom: 20px; display: flex; gap: 10px; }
+        .controls button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; }
+        #setAllBtn { background-color: #28a745; color: white; }
+        #generateBtn { background-color: #ffc107; color: black; }
+        #payloadOutput { background-color: #e9ecef; padding: 15px; border-radius: 4px; white-space: pre-wrap; margin-top: 20px; }
+    </style>
 </head>
-<title>nga</title>
-<meta content="yo" property="og:title" />
-<meta content="dbug sucks dick" property="og:description" />
-<meta content="https://pornhub.com" property="og:url" />
-<meta content="dbug.png" property="og:image" />
-<meta content="#43B581" data-react-helmet="true" name="theme-color" />
-<meta name="twitter:card" content="summary_large_image">
+<body>
+
+    <h1>Roblox Universe Settings</h1>
+    
+    <div class="config-group">
+        <h2>Configuration</h2>
+        <div class="form-group">
+            <label for="universeIdInput">Universe ID:</label>
+            <input type="text" id="universeIdInput" placeholder="e.g., 123456789" value="123456789">
+        </div>
+        <div class="form-group">
+            <label for="apiKeyInput">API Key (Bearer Token):</label>
+            <input type="text" id="apiKeyInput" placeholder="Enter your universe:write scoped API Key here">
+        </div>
+    </div>
+
+    <p>Inputs generated from the API schema. Note: **Immutable** fields cannot be changed.</p>
+    
+    <div class="controls">
+        <button type="button" id="setAllBtn" onclick="setAllValues()">Set All Editable Values</button>
+        <button type="button" id="generateBtn" onclick="generatePayload()">Generate & Print Payload</button>
+    </div>
+
+    <form id="universeSettingsForm">
+        </form>
+    
+    <h2>Generated API Payload</h2>
+    <div id="payloadOutput">
+        Ready to generate payload.
+    </div>
+
+    <script>
+        const FULL_UNIVERSE_SCHEMA = {
+            "path": "universes/123",
+            "group": "string",
+            "facebookSocialLink": { "title": "string", "uri": "string" },
+            "twitterSocialLink": { "title": "string", "uri": "string" },
+            "youtubeSocialLink": { "title": "string", "uri": "string" },
+            "twitchSocialLink": { "title": "string", "uri": "string" },
+            "discordSocialLink": { "title": "string", "uri": "string" },
+            "robloxGroupSocialLink": { "title": "string", "uri": "string" },
+            "guildedSocialLink": { "title": "string", "uri": "string" },
+            "voiceChatEnabled": true,
+            "privateServerPriceRobux": 0,
+            "desktopEnabled": true,
+            "mobileEnabled": true,
+            "tabletEnabled": true,
+            "consoleEnabled": true,
+            "vrEnabled": true,
+            "templateRootPlace": "universes/{universe_id}/places/{place_id}"
+        };
+
+        const IMMUTABLE_FIELDS = ['path', 'group', 'templateRootPlace'];
+        const form = document.getElementById('universeSettingsForm');
+        const payloadOutput = document.getElementById('payloadOutput');
+
+        // Helper function to format keys
+        function formatLabel(key) {
+            return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        }
+
+        // --- Form Generation (Same as before) ---
+        function generateForm(schema, parentKey = '') {
+            for (const key in schema) {
+                if (!schema.hasOwnProperty(key)) continue;
+                const fullKey = parentKey ? `${parentKey}-${key}` : key;
+                const value = schema[key];
+                const isImmutable = IMMUTABLE_FIELDS.includes(key);
+
+                if (typeof value === 'object' && value !== null) {
+                    generateForm(value, key);
+                } else {
+                    const container = document.createElement('div');
+                    container.className = 'form-group' + (isImmutable ? ' immutable' : '');
+                    
+                    const label = document.createElement('label');
+                    label.setAttribute('for', fullKey);
+                    label.textContent = formatLabel(fullKey) + (isImmutable ? ' (IMMUTABLE)' : '');
+                    
+                    const input = document.createElement('input');
+                    input.type = 'text'; 
+                    input.id = fullKey; 
+                    input.name = fullKey;
+                    
+                    if (isImmutable) {
+                        input.disabled = true;
+                        input.value = JSON.stringify(value).substring(0, 30) + (JSON.stringify(value).length > 30 ? '...' : '');
+                    } else {
+                        if (typeof value === 'boolean') {
+                            input.placeholder = `Boolean (e.g., true/false). Default: ${value}`;
+                        } else if (typeof value === 'number') {
+                            input.placeholder = `Number (e.g., ${value}). Default: ${value}`;
+                        } else {
+                            input.placeholder = 'String or URI';
+                        }
+                        // Add a class for easy selection in the payload function
+                        input.classList.add('api-field');
+                    }
+
+                    container.appendChild(label);
+                    container.appendChild(input);
+                    form.appendChild(container);
+                }
+            }
+        }
+        
+        // --- Set All Values (Same as before) ---
+        function setAllValues() {
+            const inputs = form.querySelectorAll('input:not([disabled])');
+            inputs.forEach(input => {
+                const key = input.id;
+                if (key.endsWith('-title')) {
+                    input.value = 'Test Title';
+                } else if (key.endsWith('-uri')) {
+                    input.value = `https://test.com/${key.split('-')[0]}`;
+                } else if (key.includes('Enabled')) {
+                    input.value = 'true';
+                } else if (key.includes('PriceRobux')) {
+                    input.value = '10';
+                } else {
+                    input.value = 'TEST_VALUE';
+                }
+            });
+            payloadOutput.textContent = "All editable fields have been set with generic test values. Click 'Generate & Print Payload' to review the output.";
+        }
+
+
+        // --- NEW: Generate and Print Payload ---
+        function generatePayload() {
+            const universeId = document.getElementById('universeIdInput').value.trim();
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            
+            if (!universeId || !apiKey) {
+                payloadOutput.textContent = "Error: Please enter both a Universe ID and an API Key.";
+                return;
+            }
+
+            const requestBody = {};
+            const updateMaskKeys = new Set();
+            const inputElements = document.querySelectorAll('.api-field');
+
+            // 1. Build the requestBody object
+            inputElements.forEach(input => {
+                const fullKey = input.id;
+                const value = input.value.trim();
+
+                // Only include fields that have a value
+                if (value !== '') {
+                    const parts = fullKey.split('-');
+                    const topLevelKey = parts[0];
+                    updateMaskKeys.add(topLevelKey);
+
+                    // Handle nested structure (e.g., facebookSocialLink-uri)
+                    if (parts.length > 1) {
+                        if (!requestBody[topLevelKey]) {
+                            requestBody[topLevelKey] = {};
+                        }
+                        const nestedKey = parts[1];
+                        requestBody[topLevelKey][nestedKey] = parseInputValue(value, FULL_UNIVERSE_SCHEMA[topLevelKey][nestedKey]);
+                    } else {
+                        // Handle simple top-level keys
+                        requestBody[topLevelKey] = parseInputValue(value, FULL_UNIVERSE_SCHEMA[topLevelKey]);
+                    }
+                }
+            });
+
+            // 2. Format the final output
+            const updateMask = Array.from(updateMaskKeys).join(',');
+            const finalUrl = `https://apis.roblox.com/universes/v1/${universeId}?updateMask=${updateMask}`;
+
+            let output = `--- API Request Details ---\n`;
+            output += `METHOD: PATCH\n`;
+            output += `URL: ${finalUrl}\n`;
+            output += `\n`;
+            output += `HEADERS:\n`;
+            output += `  Authorization: Bearer ${apiKey.substring(0, 10)}...\n`; // Truncate key for safety
+            output += `  Content-Type: application/json\n`;
+            output += `\n`;
+            output += `BODY (JSON):\n`;
+            output += JSON.stringify(requestBody, null, 2);
+
+            payloadOutput.textContent = output;
+        }
+
+        /**
+         * Converts input string to its correct data type (boolean or number)
+         */
+        function parseInputValue(value, schemaValue) {
+            if (typeof schemaValue === 'boolean') {
+                return value.toLowerCase() === 'true';
+            }
+            if (typeof schemaValue === 'number' && !isNaN(Number(value))) {
+                return Number(value);
+            }
+            return value;
+        }
+
+        // Initial setup
+        generateForm(FULL_UNIVERSE_SCHEMA);
+    </script>
+
+</body>
+</html>
